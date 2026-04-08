@@ -1,25 +1,24 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 type Pronostico = {
   id: number;
+  created_at: string;
   nombre: string;
-  golesLocal: string;
-  golesVisitante: string;
   partido: string;
-  createdAt: number;
+  goles_local: number;
+  goles_visitante: number;
+  negocio: string | null;
+  premio: string | null;
+  fecha_hora: string | null;
 };
-
-type Configuracion = {
-  nombreNegocio: string;
-  partido: string;
-  premio: string;
-  fechaHora: string;
-};
-
-const STORAGE_KEY = "bar_crazy_pronosticos_pro_final";
-const CONFIG_KEY = "bar_crazy_config_pro_final";
 
 export default function Home() {
   const [nombreNegocio, setNombreNegocio] = useState("Bar Crazy");
@@ -42,47 +41,33 @@ export default function Home() {
   const [orden, setOrden] = useState<"recientes" | "nombre">("recientes");
 
   const [pronosticos, setPronosticos] = useState<Pronostico[]>([]);
-  const [cargado, setCargado] = useState(false);
+  const [cargando, setCargando] = useState(true);
 
-  useEffect(() => {
-    try {
-      const guardados = localStorage.getItem(STORAGE_KEY);
-      const configGuardada = localStorage.getItem(CONFIG_KEY);
+  async function cargarPronosticos() {
+    setCargando(true);
 
-      if (guardados) {
-        setPronosticos(JSON.parse(guardados));
-      }
+    const { data, error } = await supabase
+      .from("pronosticos")
+      .select("*")
+      .eq("negocio", nombreNegocio)
+      .eq("partido", partido)
+      .order("created_at", { ascending: false });
 
-      if (configGuardada) {
-        const config: Configuracion = JSON.parse(configGuardada);
-        setNombreNegocio(config.nombreNegocio || "Bar Crazy");
-        setPartido(config.partido || "Real Madrid vs Atlético de Madrid");
-        setPremio(config.premio || "1 consumición gratis");
-        setFechaHora(config.fechaHora || "Sábado · 21:00");
-      }
-    } catch (error) {
-      console.error("Error leyendo localStorage", error);
-    } finally {
-      setCargado(true);
+    if (error) {
+      console.error(error);
+      setMensaje("Error al cargar participantes");
+    } else {
+      setPronosticos(data || []);
     }
-  }, []);
+
+    setCargando(false);
+  }
 
   useEffect(() => {
-    if (!cargado) return;
+    cargarPronosticos();
+  }, [nombreNegocio, partido]);
 
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(pronosticos));
-    localStorage.setItem(
-      CONFIG_KEY,
-      JSON.stringify({
-        nombreNegocio,
-        partido,
-        premio,
-        fechaHora,
-      })
-    );
-  }, [pronosticos, nombreNegocio, partido, premio, fechaHora, cargado]);
-
-  function enviarPronostico() {
+  async function enviarPronostico() {
     setMensaje("");
 
     if (!nombre.trim()) {
@@ -95,13 +80,10 @@ export default function Home() {
       return;
     }
 
-    if (Number(golesLocal) < 0 || Number(golesVisitante) < 0) {
-      setMensaje("Los goles no pueden ser negativos.");
-      return;
-    }
+    const nombreNormalizado = nombre.trim().toLowerCase();
 
     const yaExiste = pronosticos.some(
-      (p) => p.nombre.trim().toLowerCase() === nombre.trim().toLowerCase()
+      (p) => p.nombre.trim().toLowerCase() === nombreNormalizado
     );
 
     if (yaExiste) {
@@ -109,39 +91,67 @@ export default function Home() {
       return;
     }
 
-    const nuevo: Pronostico = {
-      id: Date.now(),
-      nombre: nombre.trim(),
-      golesLocal,
-      golesVisitante,
-      partido,
-      createdAt: Date.now(),
-    };
+    const { error } = await supabase.from("pronosticos").insert([
+      {
+        nombre: nombre.trim(),
+        partido,
+        goles_local: Number(golesLocal),
+        goles_visitante: Number(golesVisitante),
+        negocio: nombreNegocio,
+        premio,
+        fecha_hora: fechaHora,
+      },
+    ]);
 
-    setPronosticos([nuevo, ...pronosticos]);
+    if (error) {
+      console.error(error);
+      setMensaje("Error al guardar: " + error.message);
+      return;
+    }
+
     setNombre("");
     setGolesLocal("");
     setGolesVisitante("");
     setMensaje("✅ Pronóstico guardado");
+    cargarPronosticos();
   }
 
-  function borrarTodo() {
+  async function borrarTodo() {
     const confirmado = window.confirm("¿Seguro que quieres borrar todos los pronósticos?");
     if (!confirmado) return;
 
-    localStorage.removeItem(STORAGE_KEY);
+    const { error } = await supabase
+      .from("pronosticos")
+      .delete()
+      .eq("negocio", nombreNegocio)
+      .eq("partido", partido);
+
+    if (error) {
+      console.error(error);
+      setMensaje("Error al borrar");
+      return;
+    }
+
     setPronosticos([]);
     setResultadoFinalLocal("");
     setResultadoFinalVisitante("");
     setMensaje("Pronósticos borrados.");
   }
 
-  function borrarParticipante(id: number) {
+  async function borrarParticipante(id: number) {
     const confirmado = window.confirm("¿Quieres borrar este participante?");
     if (!confirmado) return;
 
-    setPronosticos((prev) => prev.filter((p) => p.id !== id));
+    const { error } = await supabase.from("pronosticos").delete().eq("id", id);
+
+    if (error) {
+      console.error(error);
+      setMensaje("Error al borrar participante");
+      return;
+    }
+
     setMensaje("Participante borrado.");
+    cargarPronosticos();
   }
 
   async function copiarLista() {
@@ -158,7 +168,7 @@ export default function Home() {
       "",
       "LISTA DE PARTICIPANTES",
       ...pronosticos.map(
-        (p, i) => `${i + 1}. ${p.nombre} -> ${p.golesLocal}-${p.golesVisitante}`
+        (p, i) => `${i + 1}. ${p.nombre} -> ${p.goles_local}-${p.goles_visitante}`
       ),
     ].join("\n");
 
@@ -182,7 +192,10 @@ export default function Home() {
     if (orden === "nombre") {
       lista.sort((a, b) => a.nombre.localeCompare(b.nombre));
     } else {
-      lista.sort((a, b) => b.createdAt - a.createdAt);
+      lista.sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
     }
 
     return lista;
@@ -195,8 +208,8 @@ export default function Home() {
     const finalVisitante = Number(resultadoFinalVisitante);
 
     const puntuados = pronosticos.map((p) => {
-      const pl = Number(p.golesLocal);
-      const pv = Number(p.golesVisitante);
+      const pl = Number(p.goles_local);
+      const pv = Number(p.goles_visitante);
 
       let puntos = 0;
 
@@ -220,11 +233,7 @@ export default function Home() {
       const distancia =
         Math.abs(pl - finalLocal) + Math.abs(pv - finalVisitante);
 
-      return {
-        ...p,
-        puntos,
-        distancia,
-      };
+      return { ...p, puntos, distancia };
     });
 
     puntuados.sort((a, b) => {
@@ -304,7 +313,6 @@ export default function Home() {
             75% { transform: translate(-30px, -15px) rotate(270deg); }
             100% { transform: translate(0px, 0px) rotate(360deg); }
           }
-
           @keyframes glowPulse {
             0% { box-shadow: 0 0 0px rgba(255,255,255,0.15); }
             50% { box-shadow: 0 0 30px rgba(255,255,255,0.18); }
@@ -494,7 +502,6 @@ export default function Home() {
             }}
           >
             <h3 style={{ marginBottom: "10px" }}>📜 Reglas</h3>
-
             <ul style={{ color: "#9ca3af", fontSize: "14px", lineHeight: "1.7", paddingLeft: "18px" }}>
               <li>Solo se permite una participación por persona.</li>
               <li>El pronóstico debe hacerse antes de que empiece el partido.</li>
@@ -536,16 +543,12 @@ export default function Home() {
             </select>
           </div>
 
-          {pronosticosFiltrados.length === 0 ? (
-            <div
-              style={{
-                marginTop: "16px",
-                padding: "16px",
-                borderRadius: "14px",
-                background: "#111827",
-                color: "#9ca3af",
-              }}
-            >
+          {cargando ? (
+            <div style={{ marginTop: "16px", padding: "16px", borderRadius: "14px", background: "#111827", color: "#9ca3af" }}>
+              Cargando participantes...
+            </div>
+          ) : pronosticosFiltrados.length === 0 ? (
+            <div style={{ marginTop: "16px", padding: "16px", borderRadius: "14px", background: "#111827", color: "#9ca3af" }}>
               No hay participantes.
             </div>
           ) : (
@@ -585,7 +588,7 @@ export default function Home() {
                       }}
                     >
                       {mostrarPronosticos
-                        ? `${item.golesLocal} - ${item.golesVisitante}`
+                        ? `${item.goles_local} - ${item.goles_visitante}`
                         : "Pronóstico oculto"}
                     </div>
                   </div>
@@ -698,7 +701,7 @@ export default function Home() {
                       {g.nombre}
                     </div>
                     <div style={{ color: "#9ca3af" }}>
-                      Pronóstico: {g.golesLocal} - {g.golesVisitante}
+                      Pronóstico: {g.goles_local} - {g.goles_visitante}
                     </div>
                   </div>
                 ))}
