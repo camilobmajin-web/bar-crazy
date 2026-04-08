@@ -20,7 +20,32 @@ type Pronostico = {
   fecha_hora: string | null;
 };
 
+type GanadorHistorial = {
+  id: number;
+  created_at: string;
+  negocio: string | null;
+  partido: string | null;
+  ganador: string | null;
+  pronostico: string | null;
+  resultado_final: string | null;
+  premio_monto: number | null;
+  fecha_hora: string | null;
+};
+
+const PARTIDOS_RAPIDOS = [
+  "Real Madrid vs Barcelona",
+  "Atlético de Madrid vs Sevilla",
+  "Valencia vs Villarreal",
+  "Betis vs Real Sociedad",
+  "PSG vs Marseille",
+  "Manchester City vs Liverpool",
+];
+
 export default function Home() {
+  const [mounted, setMounted] = useState(false);
+
+  const [modo, setModo] = useState<"admin" | "cliente" | "tv">("admin");
+
   const [nombreNegocio, setNombreNegocio] = useState("Bar Crazy");
   const [partido, setPartido] = useState("Real Madrid vs Atlético de Madrid");
   const [premioTexto, setPremioTexto] = useState("1 consumición gratis");
@@ -30,7 +55,6 @@ export default function Home() {
   const [porcentajePremio, setPorcentajePremio] = useState("70");
   const [porcentajeBar, setPorcentajeBar] = useState("20");
 
-  const [modoTV, setModoTV] = useState(false);
   const [mostrarPronosticos, setMostrarPronosticos] = useState(false);
   const [mostrarGanadorTV, setMostrarGanadorTV] = useState(false);
   const [apuestasCerradas, setApuestasCerradas] = useState(false);
@@ -47,7 +71,29 @@ export default function Home() {
   const [orden, setOrden] = useState<"recientes" | "nombre">("recientes");
 
   const [pronosticos, setPronosticos] = useState<Pronostico[]>([]);
+  const [historial, setHistorial] = useState<GanadorHistorial[]>([]);
   const [cargando, setCargando] = useState(true);
+  const [guardandoGanador, setGuardandoGanador] = useState(false);
+
+  const [clientUrl, setClientUrl] = useState("");
+  const [tvUrl, setTvUrl] = useState("");
+
+  useEffect(() => {
+    setMounted(true);
+
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const modoParam = params.get("modo");
+
+      if (modoParam === "cliente") setModo("cliente");
+      else if (modoParam === "tv") setModo("tv");
+      else setModo("admin");
+
+      const base = `${window.location.origin}${window.location.pathname}`;
+      setClientUrl(`${base}?modo=cliente`);
+      setTvUrl(`${base}?modo=tv`);
+    }
+  }, []);
 
   async function cargarPronosticos() {
     setCargando(true);
@@ -69,9 +115,26 @@ export default function Home() {
     setCargando(false);
   }
 
+  async function cargarHistorial() {
+    const { data, error } = await supabase
+      .from("historial_ganadores")
+      .select("*")
+      .eq("negocio", nombreNegocio)
+      .order("created_at", { ascending: false })
+      .limit(20);
+
+    if (error) {
+      console.error(error);
+    } else {
+      setHistorial(data || []);
+    }
+  }
+
   useEffect(() => {
+    if (!mounted) return;
     cargarPronosticos();
-  }, [nombreNegocio, partido]);
+    cargarHistorial();
+  }, [mounted, nombreNegocio, partido]);
 
   async function enviarPronostico() {
     setMensaje("");
@@ -276,11 +339,45 @@ export default function Home() {
     );
   }, [pronosticos, resultadoFinalLocal, resultadoFinalVisitante]);
 
+  async function guardarGanadorEnHistorial() {
+    if (ganadores.length === 0) {
+      setMensaje("No hay ganador calculado.");
+      return;
+    }
+
+    setGuardandoGanador(true);
+
+    const principal = ganadores[0];
+
+    const { error } = await supabase.from("historial_ganadores").insert([
+      {
+        negocio: nombreNegocio,
+        partido,
+        ganador: principal.nombre,
+        pronostico: `${principal.goles_local}-${principal.goles_visitante}`,
+        resultado_final: `${resultadoFinalLocal}-${resultadoFinalVisitante}`,
+        premio_monto: montoPremio,
+        fecha_hora: fechaHora,
+      },
+    ]);
+
+    setGuardandoGanador(false);
+
+    if (error) {
+      console.error(error);
+      setMensaje("Error al guardar ganador");
+      return;
+    }
+
+    setMensaje("🏆 Ganador guardado en historial");
+    cargarHistorial();
+  }
+
   const panelStyle = {
     background: "rgba(17, 24, 39, 0.78)",
     backdropFilter: "blur(16px)",
     WebkitBackdropFilter: "blur(16px)",
-    padding: modoTV ? "32px" : "24px",
+    padding: modo === "tv" ? "32px" : "24px",
     borderRadius: "26px",
     border: "1px solid rgba(255,255,255,0.08)",
     boxShadow: "0 10px 40px rgba(0,0,0,0.25)",
@@ -288,13 +385,13 @@ export default function Home() {
 
   const inputStyle = {
     width: "100%",
-    padding: modoTV ? "16px" : "12px",
+    padding: modo === "tv" ? "16px" : "12px",
     borderRadius: "14px",
     border: "1px solid #374151",
     background: "#0f172a",
     color: "white",
     boxSizing: "border-box" as const,
-    fontSize: modoTV ? "20px" : "16px",
+    fontSize: modo === "tv" ? "20px" : "16px",
   };
 
   const smallButtonStyle = {
@@ -309,13 +406,13 @@ export default function Home() {
 
   const fullButtonStyle = {
     width: "100%",
-    padding: modoTV ? "16px" : "12px",
+    padding: modo === "tv" ? "16px" : "12px",
     borderRadius: "14px",
     border: "1px solid #4b5563",
     background: "#111827",
     color: "white",
     cursor: "pointer",
-    fontSize: modoTV ? "18px" : "15px",
+    fontSize: modo === "tv" ? "18px" : "15px",
     fontWeight: "bold" as const,
   };
 
@@ -326,6 +423,306 @@ export default function Home() {
     padding: "16px",
   } as const;
 
+  const qrUrl = clientUrl
+    ? `https://quickchart.io/qr?text=${encodeURIComponent(clientUrl)}&size=240`
+    : "";
+
+  if (!mounted) return null;
+
+  if (modo === "cliente") {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          background:
+            "radial-gradient(circle at top left, rgba(59,130,246,0.25), transparent 25%), linear-gradient(135deg, #020617, #0f172a, #111827)",
+          color: "white",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          padding: "18px",
+          fontFamily: "Arial, sans-serif",
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            maxWidth: "420px",
+            background: "rgba(17,24,39,0.88)",
+            border: "1px solid rgba(255,255,255,0.08)",
+            borderRadius: "24px",
+            padding: "22px",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
+          }}
+        >
+          <div style={{ textAlign: "center", marginBottom: "18px" }}>
+            <div style={{ fontSize: "42px", marginBottom: "6px" }}>⚽</div>
+            <h1 style={{ fontSize: "30px", margin: "0 0 8px 0" }}>{nombreNegocio}</h1>
+            <p style={{ color: "#cbd5e1", margin: "0 0 6px 0" }}>{partido}</p>
+            <p style={{ color: "#94a3b8", margin: 0 }}>{fechaHora}</p>
+          </div>
+
+          <div style={{ ...cardMoneyStyle, marginBottom: "16px", textAlign: "center" }}>
+            <div style={{ fontSize: "14px", color: "#cbd5e1", marginBottom: "6px" }}>
+              Participación
+            </div>
+            <div style={{ fontSize: "34px", fontWeight: "bold" }}>{precio}€</div>
+            <div style={{ marginTop: "8px", color: "#cbd5e1" }}>
+              Bote actual: <strong>{boteTotal}€</strong>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: "12px" }}>
+            <label style={{ display: "block", marginBottom: "8px", fontWeight: "bold" }}>
+              Tu nombre
+            </label>
+            <input
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              placeholder="Escribe tu nombre"
+              style={inputStyle}
+            />
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: "12px",
+              marginBottom: "14px",
+            }}
+          >
+            <div>
+              <label style={{ display: "block", marginBottom: "8px", fontWeight: "bold" }}>
+                Local
+              </label>
+              <input
+                value={golesLocal}
+                onChange={(e) => setGolesLocal(e.target.value)}
+                placeholder="0"
+                style={inputStyle}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: "block", marginBottom: "8px", fontWeight: "bold" }}>
+                Visitante
+              </label>
+              <input
+                value={golesVisitante}
+                onChange={(e) => setGolesVisitante(e.target.value)}
+                placeholder="0"
+                style={inputStyle}
+              />
+            </div>
+          </div>
+
+          <button
+            onClick={enviarPronostico}
+            disabled={apuestasCerradas}
+            style={{
+              width: "100%",
+              padding: "14px",
+              borderRadius: "14px",
+              border: "none",
+              background: apuestasCerradas ? "#374151" : "#22c55e",
+              color: "white",
+              fontWeight: "bold",
+              cursor: apuestasCerradas ? "not-allowed" : "pointer",
+              fontSize: "16px",
+            }}
+          >
+            {apuestasCerradas ? "Apuestas cerradas" : "Enviar pronóstico"}
+          </button>
+
+          {mensaje && (
+            <p style={{ marginTop: "14px", textAlign: "center", fontWeight: "bold" }}>
+              {mensaje}
+            </p>
+          )}
+
+          <p style={{ marginTop: "16px", color: "#94a3b8", textAlign: "center", fontSize: "13px" }}>
+            El cobro de la participación se realiza fuera de la app.
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  if (modo === "tv") {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          background:
+            "radial-gradient(circle at top left, rgba(59,130,246,0.22), transparent 25%), radial-gradient(circle at top right, rgba(234,179,8,0.18), transparent 20%), linear-gradient(135deg, #020617, #0f172a, #111827)",
+          color: "white",
+          padding: "28px",
+          fontFamily: "Arial, sans-serif",
+        }}
+      >
+        {mostrarGanadorTV && ganadores.length > 0 && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              background:
+                "radial-gradient(circle at center, rgba(245,158,11,0.18), transparent 20%), linear-gradient(135deg, #020617, #0f172a, #111827)",
+              zIndex: 9999,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              textAlign: "center",
+              padding: "40px",
+              flexDirection: "column",
+            }}
+          >
+            <div style={{ fontSize: "110px", marginBottom: "18px" }}>🏆</div>
+            <div style={{ fontSize: "58px", fontWeight: "bold", marginBottom: "10px" }}>
+              GANADOR
+            </div>
+            <div style={{ fontSize: "72px", fontWeight: "bold", marginBottom: "16px" }}>
+              {ganadores[0].nombre}
+            </div>
+            <div style={{ fontSize: "34px", color: "#cbd5e1", marginBottom: "12px" }}>
+              Pronóstico: {ganadores[0].goles_local} - {ganadores[0].goles_visitante}
+            </div>
+            <div style={{ fontSize: "42px", color: "#22c55e", fontWeight: "bold" }}>
+              Premio estimado: {montoPremio}€
+            </div>
+          </div>
+        )}
+
+        <div style={{ maxWidth: "1600px", margin: "0 auto" }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1.2fr 1fr",
+              gap: "24px",
+              alignItems: "start",
+            }}
+          >
+            <section style={panelStyle}>
+              <div style={{ fontSize: "54px", fontWeight: "bold", marginBottom: "10px" }}>
+                {nombreNegocio} ⚽
+              </div>
+              <div style={{ fontSize: "30px", color: "#cbd5e1", marginBottom: "8px" }}>
+                {partido}
+              </div>
+              <div style={{ fontSize: "22px", color: "#94a3b8", marginBottom: "18px" }}>
+                {fechaHora}
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr 1fr 1fr",
+                  gap: "14px",
+                  marginBottom: "24px",
+                }}
+              >
+                <div style={cardMoneyStyle}>
+                  <div style={{ color: "#cbd5e1", marginBottom: "8px" }}>Jugadores</div>
+                  <div style={{ fontSize: "40px", fontWeight: "bold" }}>{totalJugadores}</div>
+                </div>
+                <div style={cardMoneyStyle}>
+                  <div style={{ color: "#cbd5e1", marginBottom: "8px" }}>Bote</div>
+                  <div style={{ fontSize: "40px", fontWeight: "bold" }}>{boteTotal}€</div>
+                </div>
+                <div style={cardMoneyStyle}>
+                  <div style={{ color: "#cbd5e1", marginBottom: "8px" }}>Premio</div>
+                  <div style={{ fontSize: "40px", fontWeight: "bold" }}>{montoPremio}€</div>
+                </div>
+                <div style={cardMoneyStyle}>
+                  <div style={{ color: "#cbd5e1", marginBottom: "8px" }}>Bar</div>
+                  <div style={{ fontSize: "40px", fontWeight: "bold" }}>{montoBar}€</div>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: "20px",
+                  borderRadius: "18px",
+                  background: "#111827",
+                  border: "1px solid #374151",
+                  marginBottom: "20px",
+                }}
+              >
+                <div style={{ color: "#94a3b8", marginBottom: "8px" }}>Participa aquí</div>
+                {qrUrl && (
+                  <img
+                    src={qrUrl}
+                    alt="QR cliente"
+                    style={{
+                      width: "220px",
+                      height: "220px",
+                      background: "white",
+                      borderRadius: "12px",
+                      padding: "8px",
+                    }}
+                  />
+                )}
+                <div style={{ marginTop: "12px", fontSize: "18px", color: "#cbd5e1" }}>
+                  Precio por participación: <strong>{precio}€</strong>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: "20px",
+                  borderRadius: "18px",
+                  background: "#111827",
+                  border: "1px solid #374151",
+                }}
+              >
+                <div style={{ color: "#94a3b8", marginBottom: "8px" }}>Estado</div>
+                <div style={{ fontSize: "28px", fontWeight: "bold" }}>
+                  {apuestasCerradas ? "Apuestas cerradas" : "Apuestas abiertas"}
+                </div>
+              </div>
+            </section>
+
+            <section style={panelStyle}>
+              <h3 style={{ fontSize: "32px", marginTop: 0, marginBottom: "14px" }}>
+                Participantes en vivo
+              </h3>
+
+              {cargando ? (
+                <div style={{ color: "#9ca3af" }}>Cargando...</div>
+              ) : pronosticos.length === 0 ? (
+                <div style={{ color: "#9ca3af" }}>Todavía no hay participantes.</div>
+              ) : (
+                <div style={{ display: "grid", gap: "12px" }}>
+                  {pronosticos.slice(0, 12).map((item) => (
+                    <div
+                      key={item.id}
+                      style={{
+                        padding: "16px",
+                        borderRadius: "14px",
+                        background: "#111827",
+                        border: "1px solid #374151",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <div style={{ fontSize: "24px", fontWeight: "bold" }}>{item.nombre}</div>
+                      <div style={{ color: "#94a3b8", fontSize: "20px" }}>
+                        {mostrarPronosticos
+                          ? `${item.goles_local} - ${item.goles_visitante}`
+                          : "Pronóstico oculto"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main
       style={{
@@ -333,7 +730,7 @@ export default function Home() {
         background:
           "radial-gradient(circle at top left, rgba(59,130,246,0.22), transparent 25%), radial-gradient(circle at top right, rgba(234,179,8,0.18), transparent 20%), radial-gradient(circle at bottom right, rgba(34,197,94,0.16), transparent 22%), linear-gradient(135deg, #020617, #0f172a, #111827)",
         color: "white",
-        padding: modoTV ? "32px" : "24px",
+        padding: "24px",
         fontFamily: "Arial, sans-serif",
         overflow: "hidden",
         position: "relative",
@@ -364,9 +761,9 @@ export default function Home() {
       <div
         style={{
           position: "absolute",
-          top: modoTV ? "26px" : "18px",
-          right: modoTV ? "40px" : "24px",
-          fontSize: modoTV ? "64px" : "42px",
+          top: "18px",
+          right: "24px",
+          fontSize: "42px",
           animation: "floatBall 6s ease-in-out infinite",
           filter: "drop-shadow(0 0 20px rgba(255,255,255,0.15))",
           pointerEvents: "none",
@@ -378,9 +775,9 @@ export default function Home() {
       <div
         style={{
           position: "absolute",
-          bottom: modoTV ? "20px" : "10px",
-          left: modoTV ? "26px" : "14px",
-          fontSize: modoTV ? "64px" : "40px",
+          bottom: "10px",
+          left: "14px",
+          fontSize: "40px",
           opacity: 0.2,
           animation: "floatBeer 5s ease-in-out infinite",
           pointerEvents: "none",
@@ -437,11 +834,11 @@ export default function Home() {
 
       <div
         style={{
-          maxWidth: modoTV ? "1600px" : "1380px",
+          maxWidth: "1450px",
           margin: "0 auto",
           display: "grid",
           gap: "24px",
-          gridTemplateColumns: modoTV ? "1.1fr 1fr 1fr" : "1fr 1fr 1fr",
+          gridTemplateColumns: "1fr 1fr 1fr",
         }}
       >
         <section style={panelStyle}>
@@ -469,16 +866,19 @@ export default function Home() {
                 {mostrarPronosticos ? "Ocultar pronósticos" : "Mostrar pronósticos"}
               </button>
 
-              <button
-                onClick={() => setModoTV(!modoTV)}
+              <a
+                href={tvUrl}
+                target="_blank"
+                rel="noreferrer"
                 style={{
                   ...smallButtonStyle,
-                  background: modoTV ? "#f8fafc" : "#111827",
-                  color: modoTV ? "#111827" : "white",
+                  textDecoration: "none",
+                  display: "inline-flex",
+                  alignItems: "center",
                 }}
               >
-                {modoTV ? "Salir modo TV" : "Modo TV"}
-              </button>
+                Abrir modo TV
+              </a>
             </div>
           </div>
 
@@ -494,6 +894,28 @@ export default function Home() {
               Partido
             </label>
             <input value={partido} onChange={(e) => setPartido(e.target.value)} style={inputStyle} />
+          </div>
+
+          <div style={{ display: "grid", gap: "10px", marginBottom: "14px" }}>
+            <div style={{ color: "#94a3b8", fontSize: "14px" }}>Partidos rápidos</div>
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+              {PARTIDOS_RAPIDOS.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPartido(p)}
+                  style={{
+                    padding: "8px 10px",
+                    borderRadius: "10px",
+                    border: "1px solid #374151",
+                    background: "#0f172a",
+                    color: "white",
+                    cursor: "pointer",
+                  }}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div style={{ marginBottom: "14px" }}>
@@ -540,7 +962,7 @@ export default function Home() {
 
           <div style={{ ...cardMoneyStyle, marginBottom: "18px" }}>
             <div style={{ fontSize: "14px", color: "#cbd5e1", marginBottom: "10px" }}>
-              Dinámica económica mostrada en pantalla
+              Dinámica económica
             </div>
             <div style={{ display: "grid", gap: "8px" }}>
               <div>💵 Participación: <strong>{precio}€</strong></div>
@@ -551,20 +973,6 @@ export default function Home() {
               <div>💻 Sistema: <strong>{montoSistema}€</strong></div>
             </div>
           </div>
-
-          <p style={{ color: "#94a3b8", marginBottom: "8px" }}>Partido de hoy</p>
-          <h1 style={{ fontSize: modoTV ? "54px" : "34px", margin: "0 0 8px 0", lineHeight: 1.05 }}>
-            {nombreNegocio} ⚽
-          </h1>
-          <h2 style={{ fontSize: modoTV ? "32px" : "22px", margin: "0 0 8px 0" }}>
-            {partido}
-          </h2>
-          <p style={{ color: "#cbd5e1", fontSize: modoTV ? "20px" : "16px", marginBottom: "6px" }}>
-            {fechaHora}
-          </p>
-          <p style={{ color: "#d1d5db", marginBottom: "24px", fontSize: modoTV ? "22px" : "16px", fontWeight: "bold" }}>
-            Premio: {premioTexto}
-          </p>
 
           <div style={{ marginBottom: "14px" }}>
             <label style={{ display: "block", marginBottom: "8px", fontWeight: "bold" }}>
@@ -642,36 +1050,40 @@ export default function Home() {
               {mensaje}
             </p>
           )}
-
-          <div
-            style={{
-              marginTop: "24px",
-              padding: "16px",
-              borderRadius: "14px",
-              background: "#0f172a",
-              border: "1px solid #374151",
-            }}
-          >
-            <h3 style={{ marginBottom: "10px" }}>📜 Reglas</h3>
-            <ul style={{ color: "#9ca3af", fontSize: "14px", lineHeight: "1.7", paddingLeft: "18px" }}>
-              <li>Solo se permite una participación por persona.</li>
-              <li>El pronóstico debe hacerse antes de que empiece el partido.</li>
-              <li>Se puede apostar a victoria local, visitante o empate.</li>
-              <li>Gana quien acierte el resultado exacto.</li>
-              <li>Si nadie acierta exacto, gana quien más se acerque.</li>
-              <li>Primero cuenta acertar ganador o empate.</li>
-              <li>Después cuenta la diferencia total de goles.</li>
-              <li>Si sigue habiendo empate, el premio se reparte.</li>
-              <li>El cobro de participación se realiza fuera de la app.</li>
-              <li>La decisión final la toma el bar.</li>
-            </ul>
-          </div>
         </section>
 
         <section style={panelStyle}>
-          <h3 style={{ fontSize: modoTV ? "40px" : "24px", marginTop: 0, marginBottom: "10px" }}>
-            Participantes
+          <h3 style={{ fontSize: "24px", marginTop: 0, marginBottom: "12px" }}>
+            QR cliente + participantes
           </h3>
+
+          <div
+            style={{
+              padding: "16px",
+              borderRadius: "14px",
+              background: "#111827",
+              border: "1px solid #374151",
+              marginBottom: "16px",
+              textAlign: "center",
+            }}
+          >
+            {qrUrl && (
+              <img
+                src={qrUrl}
+                alt="QR cliente"
+                style={{
+                  width: "180px",
+                  height: "180px",
+                  background: "white",
+                  borderRadius: "12px",
+                  padding: "8px",
+                }}
+              />
+            )}
+            <div style={{ marginTop: "12px", color: "#cbd5e1", fontSize: "14px" }}>
+              QR del formulario móvil
+            </div>
+          </div>
 
           <p style={{ color: "#9ca3af", marginBottom: "14px" }}>
             Total: {pronosticos.length}
@@ -709,7 +1121,7 @@ export default function Home() {
                 <div
                   key={item.id}
                   style={{
-                    padding: modoTV ? "20px" : "16px",
+                    padding: "16px",
                     borderRadius: "14px",
                     background: "#111827",
                     border: "1px solid #374151",
@@ -724,17 +1136,17 @@ export default function Home() {
                     }}
                   >
                     <div>
-                      <div style={{ fontWeight: "bold", fontSize: modoTV ? "26px" : "18px" }}>
+                      <div style={{ fontWeight: "bold", fontSize: "18px" }}>
                         {item.nombre}
                       </div>
-                      <div style={{ color: "#9ca3af", fontSize: modoTV ? "18px" : "14px" }}>
+                      <div style={{ color: "#9ca3af", fontSize: "14px" }}>
                         {item.partido}
                       </div>
                     </div>
 
                     <div
                       style={{
-                        fontSize: modoTV ? "24px" : "16px",
+                        fontSize: "16px",
                         color: mostrarPronosticos ? "white" : "#9ca3af",
                         fontWeight: "bold",
                       }}
@@ -766,8 +1178,8 @@ export default function Home() {
         </section>
 
         <section style={panelStyle}>
-          <h3 style={{ fontSize: modoTV ? "40px" : "24px", marginTop: 0, marginBottom: "12px" }}>
-            Resultado final y ganador
+          <h3 style={{ fontSize: "24px", marginTop: 0, marginBottom: "12px" }}>
+            Resultado, ganador e historial
           </h3>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "16px" }}>
@@ -796,25 +1208,6 @@ export default function Home() {
             </div>
           </div>
 
-          {resultadoFinalLocal !== "" && resultadoFinalVisitante !== "" && (
-            <div
-              style={{
-                padding: "16px",
-                borderRadius: "14px",
-                background: "#111827",
-                border: "1px solid #374151",
-                marginBottom: "16px",
-              }}
-            >
-              <div style={{ color: "#9ca3af", marginBottom: "8px" }}>
-                Resultado cargado
-              </div>
-              <div style={{ fontSize: modoTV ? "34px" : "24px", fontWeight: "bold" }}>
-                {resultadoFinalLocal} - {resultadoFinalVisitante}
-              </div>
-            </div>
-          )}
-
           {ganadores.length === 0 ? (
             <div
               style={{
@@ -822,6 +1215,7 @@ export default function Home() {
                 borderRadius: "14px",
                 background: "#111827",
                 color: "#9ca3af",
+                marginBottom: "16px",
               }}
             >
               Introduce el resultado final para calcular ganador.
@@ -833,6 +1227,7 @@ export default function Home() {
                 borderRadius: "14px",
                 background: "#111827",
                 border: "1px solid #374151",
+                marginBottom: "16px",
               }}
             >
               <div style={{ color: "#9ca3af", marginBottom: "10px" }}>
@@ -849,7 +1244,7 @@ export default function Home() {
                       background: "#0f172a",
                     }}
                   >
-                    <div style={{ fontWeight: "bold", fontSize: modoTV ? "24px" : "18px" }}>
+                    <div style={{ fontWeight: "bold", fontSize: "18px" }}>
                       {g.nombre}
                     </div>
                     <div style={{ color: "#9ca3af" }}>
@@ -859,19 +1254,92 @@ export default function Home() {
                 ))}
               </div>
 
-              <button
-                onClick={() => setMostrarGanadorTV(true)}
-                style={{
-                  ...fullButtonStyle,
-                  background: "#f8fafc",
-                  color: "#111827",
-                  border: "none",
-                }}
-              >
-                Mostrar ganador en TV
-              </button>
+              <div style={{ display: "grid", gap: "10px" }}>
+                <button
+                  onClick={() => setMostrarGanadorTV(true)}
+                  style={{
+                    ...fullButtonStyle,
+                    background: "#f8fafc",
+                    color: "#111827",
+                    border: "none",
+                  }}
+                >
+                  Mostrar ganador en TV
+                </button>
+
+                <button
+                  onClick={guardarGanadorEnHistorial}
+                  disabled={guardandoGanador}
+                  style={fullButtonStyle}
+                >
+                  {guardandoGanador ? "Guardando..." : "Guardar ganador en historial"}
+                </button>
+              </div>
             </div>
           )}
+
+          <div
+            style={{
+              padding: "16px",
+              borderRadius: "14px",
+              background: "#111827",
+              border: "1px solid #374151",
+            }}
+          >
+            <h4 style={{ marginTop: 0, marginBottom: "12px" }}>Historial de ganadores</h4>
+
+            {historial.length === 0 ? (
+              <div style={{ color: "#9ca3af" }}>Todavía no hay historial guardado.</div>
+            ) : (
+              <div style={{ display: "grid", gap: "10px" }}>
+                {historial.map((h) => (
+                  <div
+                    key={h.id}
+                    style={{
+                      padding: "12px",
+                      borderRadius: "12px",
+                      background: "#0f172a",
+                    }}
+                  >
+                    <div style={{ fontWeight: "bold" }}>{h.ganador}</div>
+                    <div style={{ color: "#9ca3af", fontSize: "14px" }}>
+                      {h.partido}
+                    </div>
+                    <div style={{ color: "#cbd5e1", fontSize: "14px", marginTop: "4px" }}>
+                      Resultado final: {h.resultado_final} · Pronóstico: {h.pronostico}
+                    </div>
+                    <div style={{ color: "#22c55e", fontWeight: "bold", marginTop: "4px" }}>
+                      Premio: {h.premio_monto}€
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div
+            style={{
+              marginTop: "16px",
+              padding: "16px",
+              borderRadius: "14px",
+              background: "#0f172a",
+              border: "1px solid #374151",
+            }}
+          >
+            <h3 style={{ marginBottom: "10px" }}>📜 Reglas</h3>
+            <ul style={{ color: "#9ca3af", fontSize: "14px", lineHeight: "1.7", paddingLeft: "18px" }}>
+              <li>Solo se permite una participación por persona.</li>
+              <li>El pronóstico debe hacerse antes de que empiece el partido.</li>
+              <li>Se puede apostar a victoria local, visitante o empate.</li>
+              <li>Gana quien acierte el resultado exacto.</li>
+              <li>Si nadie acierta exacto, gana quien más se acerque.</li>
+              <li>Primero cuenta acertar ganador o empate.</li>
+              <li>Después cuenta la diferencia total de goles.</li>
+              <li>Si sigue habiendo empate, el premio se reparte.</li>
+              <li>El cobro de la participación se realiza fuera de la app.</li>
+              <li>La decisión final la toma el bar.</li>
+            </ul>
+          </div>
         </section>
       </div>
     </main>
