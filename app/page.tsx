@@ -23,11 +23,17 @@ type Pronostico = {
 export default function Home() {
   const [nombreNegocio, setNombreNegocio] = useState("Bar Crazy");
   const [partido, setPartido] = useState("Real Madrid vs Atlético de Madrid");
-  const [premio, setPremio] = useState("1 consumición gratis");
+  const [premioTexto, setPremioTexto] = useState("1 consumición gratis");
   const [fechaHora, setFechaHora] = useState("Sábado · 21:00");
+
+  const [precioEntrada, setPrecioEntrada] = useState("5");
+  const [porcentajePremio, setPorcentajePremio] = useState("70");
+  const [porcentajeBar, setPorcentajeBar] = useState("20");
 
   const [modoTV, setModoTV] = useState(false);
   const [mostrarPronosticos, setMostrarPronosticos] = useState(false);
+  const [mostrarGanadorTV, setMostrarGanadorTV] = useState(false);
+  const [apuestasCerradas, setApuestasCerradas] = useState(false);
 
   const [nombre, setNombre] = useState("");
   const [golesLocal, setGolesLocal] = useState("");
@@ -70,6 +76,11 @@ export default function Home() {
   async function enviarPronostico() {
     setMensaje("");
 
+    if (apuestasCerradas) {
+      setMensaje("Las apuestas están cerradas.");
+      return;
+    }
+
     if (!nombre.trim()) {
       setMensaje("Escribe tu nombre.");
       return;
@@ -77,6 +88,11 @@ export default function Home() {
 
     if (golesLocal === "" || golesVisitante === "") {
       setMensaje("Pon ambos resultados.");
+      return;
+    }
+
+    if (Number(golesLocal) < 0 || Number(golesVisitante) < 0) {
+      setMensaje("Los goles no pueden ser negativos.");
       return;
     }
 
@@ -98,7 +114,7 @@ export default function Home() {
         goles_local: Number(golesLocal),
         goles_visitante: Number(golesVisitante),
         negocio: nombreNegocio,
-        premio,
+        premio: premioTexto,
         fecha_hora: fechaHora,
       },
     ]);
@@ -136,6 +152,7 @@ export default function Home() {
     setResultadoFinalLocal("");
     setResultadoFinalVisitante("");
     setMensaje("Pronósticos borrados.");
+    setMostrarGanadorTV(false);
   }
 
   async function borrarParticipante(id: number) {
@@ -163,8 +180,9 @@ export default function Home() {
     const texto = [
       `${nombreNegocio}`,
       `Partido: ${partido}`,
-      `Premio: ${premio}`,
+      `Premio anunciado: ${premioTexto}`,
       `Fecha: ${fechaHora}`,
+      `Precio participación: ${precioEntrada}€`,
       "",
       "LISTA DE PARTICIPANTES",
       ...pronosticos.map(
@@ -200,6 +218,15 @@ export default function Home() {
 
     return lista;
   }, [pronosticos, busqueda, orden]);
+
+  const totalJugadores = pronosticos.length;
+  const precio = Number(precioEntrada) || 0;
+  const boteTotal = totalJugadores * precio;
+  const pctPremio = Number(porcentajePremio) || 0;
+  const pctBar = Number(porcentajeBar) || 0;
+  const montoPremio = Math.max(0, Math.round((boteTotal * pctPremio) / 100));
+  const montoBar = Math.max(0, Math.round((boteTotal * pctBar) / 100));
+  const montoSistema = Math.max(0, boteTotal - montoPremio - montoBar);
 
   const ganadores = useMemo(() => {
     if (resultadoFinalLocal === "" || resultadoFinalVisitante === "") return [];
@@ -250,12 +277,13 @@ export default function Home() {
   }, [pronosticos, resultadoFinalLocal, resultadoFinalVisitante]);
 
   const panelStyle = {
-    background: "rgba(31, 41, 55, 0.78)",
-    backdropFilter: "blur(14px)",
-    WebkitBackdropFilter: "blur(14px)",
+    background: "rgba(17, 24, 39, 0.78)",
+    backdropFilter: "blur(16px)",
+    WebkitBackdropFilter: "blur(16px)",
     padding: modoTV ? "32px" : "24px",
-    borderRadius: "24px",
+    borderRadius: "26px",
     border: "1px solid rgba(255,255,255,0.08)",
+    boxShadow: "0 10px 40px rgba(0,0,0,0.25)",
   } as const;
 
   const inputStyle = {
@@ -263,7 +291,7 @@ export default function Home() {
     padding: modoTV ? "16px" : "12px",
     borderRadius: "14px",
     border: "1px solid #374151",
-    background: "#111827",
+    background: "#0f172a",
     color: "white",
     boxSizing: "border-box" as const,
     fontSize: modoTV ? "20px" : "16px",
@@ -291,12 +319,19 @@ export default function Home() {
     fontWeight: "bold" as const,
   };
 
+  const cardMoneyStyle = {
+    background: "linear-gradient(135deg, rgba(245,158,11,0.18), rgba(34,197,94,0.12))",
+    border: "1px solid rgba(255,255,255,0.08)",
+    borderRadius: "18px",
+    padding: "16px",
+  } as const;
+
   return (
     <main
       style={{
         minHeight: "100vh",
         background:
-          "radial-gradient(circle at top left, rgba(59,130,246,0.35), transparent 25%), radial-gradient(circle at top right, rgba(168,85,247,0.25), transparent 20%), linear-gradient(135deg, #020617, #0f172a, #111827)",
+          "radial-gradient(circle at top left, rgba(59,130,246,0.22), transparent 25%), radial-gradient(circle at top right, rgba(234,179,8,0.18), transparent 20%), radial-gradient(circle at bottom right, rgba(34,197,94,0.16), transparent 22%), linear-gradient(135deg, #020617, #0f172a, #111827)",
         color: "white",
         padding: modoTV ? "32px" : "24px",
         fontFamily: "Arial, sans-serif",
@@ -307,16 +342,21 @@ export default function Home() {
       <style>
         {`
           @keyframes floatBall {
-            0% { transform: translate(0px, 0px) rotate(0deg); }
-            25% { transform: translate(30px, -20px) rotate(90deg); }
-            50% { transform: translate(0px, -35px) rotate(180deg); }
-            75% { transform: translate(-30px, -15px) rotate(270deg); }
-            100% { transform: translate(0px, 0px) rotate(360deg); }
+            0% { transform: translate(0px, 0px) rotate(0deg); opacity: 0.95; }
+            25% { transform: translate(26px, -18px) rotate(90deg); opacity: 1; }
+            50% { transform: translate(0px, -34px) rotate(180deg); opacity: 0.9; }
+            75% { transform: translate(-26px, -16px) rotate(270deg); opacity: 1; }
+            100% { transform: translate(0px, 0px) rotate(360deg); opacity: 0.95; }
           }
           @keyframes glowPulse {
             0% { box-shadow: 0 0 0px rgba(255,255,255,0.15); }
             50% { box-shadow: 0 0 30px rgba(255,255,255,0.18); }
             100% { box-shadow: 0 0 0px rgba(255,255,255,0.15); }
+          }
+          @keyframes floatBeer {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-12px); }
+            100% { transform: translateY(0px); }
           }
         `}
       </style>
@@ -324,7 +364,7 @@ export default function Home() {
       <div
         style={{
           position: "absolute",
-          top: modoTV ? "30px" : "20px",
+          top: modoTV ? "26px" : "18px",
           right: modoTV ? "40px" : "24px",
           fontSize: modoTV ? "64px" : "42px",
           animation: "floatBall 6s ease-in-out infinite",
@@ -337,7 +377,67 @@ export default function Home() {
 
       <div
         style={{
-          maxWidth: modoTV ? "1500px" : "1280px",
+          position: "absolute",
+          bottom: modoTV ? "20px" : "10px",
+          left: modoTV ? "26px" : "14px",
+          fontSize: modoTV ? "64px" : "40px",
+          opacity: 0.2,
+          animation: "floatBeer 5s ease-in-out infinite",
+          pointerEvents: "none",
+        }}
+      >
+        🍺
+      </div>
+
+      {mostrarGanadorTV && ganadores.length > 0 && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background:
+              "radial-gradient(circle at center, rgba(245,158,11,0.18), transparent 20%), linear-gradient(135deg, #020617, #0f172a, #111827)",
+            zIndex: 9999,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            textAlign: "center",
+            padding: "40px",
+            flexDirection: "column",
+          }}
+        >
+          <div style={{ fontSize: "110px", marginBottom: "18px" }}>🏆</div>
+          <div style={{ fontSize: "58px", fontWeight: "bold", marginBottom: "10px" }}>
+            GANADOR
+          </div>
+          <div style={{ fontSize: "72px", fontWeight: "bold", marginBottom: "16px" }}>
+            {ganadores[0].nombre}
+          </div>
+          <div style={{ fontSize: "34px", color: "#cbd5e1", marginBottom: "12px" }}>
+            Pronóstico: {ganadores[0].goles_local} - {ganadores[0].goles_visitante}
+          </div>
+          <div style={{ fontSize: "42px", color: "#22c55e", fontWeight: "bold", marginBottom: "28px" }}>
+            Premio estimado: {montoPremio}€
+          </div>
+          <button
+            onClick={() => setMostrarGanadorTV(false)}
+            style={{
+              padding: "16px 28px",
+              borderRadius: "14px",
+              border: "1px solid #4b5563",
+              background: "#111827",
+              color: "white",
+              cursor: "pointer",
+              fontWeight: "bold",
+            }}
+          >
+            Cerrar pantalla de ganador
+          </button>
+        </div>
+      )}
+
+      <div
+        style={{
+          maxWidth: modoTV ? "1600px" : "1380px",
           margin: "0 auto",
           display: "grid",
           gap: "24px",
@@ -398,16 +498,58 @@ export default function Home() {
 
           <div style={{ marginBottom: "14px" }}>
             <label style={{ display: "block", marginBottom: "8px", fontWeight: "bold" }}>
-              Premio
+              Premio anunciado
             </label>
-            <input value={premio} onChange={(e) => setPremio(e.target.value)} style={inputStyle} />
+            <input value={premioTexto} onChange={(e) => setPremioTexto(e.target.value)} style={inputStyle} />
           </div>
 
-          <div style={{ marginBottom: "22px" }}>
+          <div style={{ marginBottom: "14px" }}>
             <label style={{ display: "block", marginBottom: "8px", fontWeight: "bold" }}>
               Fecha y hora
             </label>
             <input value={fechaHora} onChange={(e) => setFechaHora(e.target.value)} style={inputStyle} />
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr 1fr",
+              gap: "12px",
+              marginBottom: "18px",
+            }}
+          >
+            <div>
+              <label style={{ display: "block", marginBottom: "8px", fontWeight: "bold" }}>
+                Precio entrada €
+              </label>
+              <input value={precioEntrada} onChange={(e) => setPrecioEntrada(e.target.value)} style={inputStyle} />
+            </div>
+            <div>
+              <label style={{ display: "block", marginBottom: "8px", fontWeight: "bold" }}>
+                % premio
+              </label>
+              <input value={porcentajePremio} onChange={(e) => setPorcentajePremio(e.target.value)} style={inputStyle} />
+            </div>
+            <div>
+              <label style={{ display: "block", marginBottom: "8px", fontWeight: "bold" }}>
+                % bar
+              </label>
+              <input value={porcentajeBar} onChange={(e) => setPorcentajeBar(e.target.value)} style={inputStyle} />
+            </div>
+          </div>
+
+          <div style={{ ...cardMoneyStyle, marginBottom: "18px" }}>
+            <div style={{ fontSize: "14px", color: "#cbd5e1", marginBottom: "10px" }}>
+              Dinámica económica mostrada en pantalla
+            </div>
+            <div style={{ display: "grid", gap: "8px" }}>
+              <div>💵 Participación: <strong>{precio}€</strong></div>
+              <div>👥 Jugadores: <strong>{totalJugadores}</strong></div>
+              <div>💰 Bote total: <strong>{boteTotal}€</strong></div>
+              <div>🏆 Premio estimado: <strong>{montoPremio}€</strong></div>
+              <div>🍻 Bar: <strong>{montoBar}€</strong></div>
+              <div>💻 Sistema: <strong>{montoSistema}€</strong></div>
+            </div>
           </div>
 
           <p style={{ color: "#94a3b8", marginBottom: "8px" }}>Partido de hoy</p>
@@ -421,7 +563,7 @@ export default function Home() {
             {fechaHora}
           </p>
           <p style={{ color: "#d1d5db", marginBottom: "24px", fontSize: modoTV ? "22px" : "16px", fontWeight: "bold" }}>
-            Premio: {premio}
+            Premio: {premioTexto}
           </p>
 
           <div style={{ marginBottom: "14px" }}>
@@ -464,19 +606,28 @@ export default function Home() {
 
           <button
             onClick={enviarPronostico}
+            disabled={apuestasCerradas}
             style={{
               ...fullButtonStyle,
-              background: "#f8fafc",
-              color: "#111827",
+              background: apuestasCerradas ? "#374151" : "#f8fafc",
+              color: apuestasCerradas ? "#d1d5db" : "#111827",
               border: "none",
               marginBottom: "12px",
-              animation: "glowPulse 3s ease-in-out infinite",
+              animation: apuestasCerradas ? "none" : "glowPulse 3s ease-in-out infinite",
+              cursor: apuestasCerradas ? "not-allowed" : "pointer",
             }}
           >
-            Enviar pronóstico
+            {apuestasCerradas ? "Apuestas cerradas" : "Enviar pronóstico"}
           </button>
 
           <div style={{ display: "grid", gap: "10px" }}>
+            <button
+              onClick={() => setApuestasCerradas(!apuestasCerradas)}
+              style={fullButtonStyle}
+            >
+              {apuestasCerradas ? "Abrir apuestas" : "Cerrar apuestas"}
+            </button>
+
             <button onClick={copiarLista} style={fullButtonStyle}>
               Copiar lista
             </button>
@@ -511,6 +662,7 @@ export default function Home() {
               <li>Primero cuenta acertar ganador o empate.</li>
               <li>Después cuenta la diferencia total de goles.</li>
               <li>Si sigue habiendo empate, el premio se reparte.</li>
+              <li>El cobro de participación se realiza fuera de la app.</li>
               <li>La decisión final la toma el bar.</li>
             </ul>
           </div>
@@ -687,7 +839,7 @@ export default function Home() {
                 Ganador{ganadores.length > 1 ? "es" : ""}
               </div>
 
-              <div style={{ display: "grid", gap: "10px" }}>
+              <div style={{ display: "grid", gap: "10px", marginBottom: "14px" }}>
                 {ganadores.map((g) => (
                   <div
                     key={g.id}
@@ -706,6 +858,18 @@ export default function Home() {
                   </div>
                 ))}
               </div>
+
+              <button
+                onClick={() => setMostrarGanadorTV(true)}
+                style={{
+                  ...fullButtonStyle,
+                  background: "#f8fafc",
+                  color: "#111827",
+                  border: "none",
+                }}
+              >
+                Mostrar ganador en TV
+              </button>
             </div>
           )}
         </section>
